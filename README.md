@@ -1,13 +1,15 @@
 # MaLeKit
 
-MaLeKit (Machine Learning Kit) is a library of some non-standard machine learning algorithms.
+MaLeKit (Machine Learning Kit) is a library
+of some non-standard machine learning algorithms.
 
-----------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 # Algorithms
 
-TODO
+*RidgeRegTree* and *RidgeRegForest*
+Ridge Regression Tree and Forest
 
-----------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 # Python
 
 The installation of a minimal python virtual environment:
@@ -30,4 +32,3 @@ source .../pyenv/bin/activate  # if not done yet
 cd .../MaLeKit/python  # go to the python directory of this project
 PYTHONPATH=. nosetests --with-doctests
 ```
-

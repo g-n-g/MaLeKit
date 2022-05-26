@@ -120,17 +120,17 @@ class TestRidgeRegTree_2:
         assert len(rrt.tree_) == 29, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.7479512), mse
+        assert np.allclose(mse, 1.8485992), mse
 
     def test_max_features(self):
         x = self.x
         y = self.y
         rrt = RidgeRegTree(min_samples_leaf=100, random_state=19, max_features=2)
         rrt.fit(x, y)
-        assert len(rrt.tree_) == 29, len(rrt.tree_)
+        assert len(rrt.tree_) == 25, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.198916), mse
+        assert np.allclose(mse, 1.156318), mse
 
     def test_random_directions(self):
         x = self.x
@@ -138,10 +138,10 @@ class TestRidgeRegTree_2:
         rrt = RidgeRegTree(min_samples_leaf=100, random_state=19,
                            max_features=0, n_random_direction=2)
         rrt.fit(x, y)
-        assert len(rrt.tree_) == 27, len(rrt.tree_)
+        assert len(rrt.tree_) == 25, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.318685), mse
+        assert np.allclose(mse, 1.31805), mse
 
     def test_n_knots(self):
         x = self.x
@@ -151,7 +151,7 @@ class TestRidgeRegTree_2:
         assert len(rrt.tree_) == 27, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.276216), mse
+        assert np.allclose(mse, 1.5261516), mse
 
     def test_min_samples_split(self):
         x = self.x

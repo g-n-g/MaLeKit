@@ -160,12 +160,12 @@ class RidgeRegTree(Regressor):
         np.square(z, out=z)
         return (lmp, np.sum(z))
 
-    BestCandData = namedtuple(
-        "BestCandData", "idx split score left_idx, left right_idx right",
+    CandidateData = namedtuple(
+        "CandidateData", "idx split score left_idx, left right_idx right",
     )
 
     @staticmethod
-    def update_best_candidate(
+    def eval_candidate(
         sample_idx, scores, split, min_samples_leaf,
         x, y, alpha, node_idx, node_ssq, best_cand_data,
     ):
@@ -181,7 +181,7 @@ class RidgeRegTree(Regressor):
         cand_right = RidgeRegTree.fit_and_eval(x[right_idx, :], y[right_idx, :], alpha)
         cand_score = cand_left[1] + cand_right[1] - node_ssq
         if cand_score < best_cand_data.score:
-            best_cand_data = RidgeRegTree.BestCandData(
+            best_cand_data = RidgeRegTree.CandidateData(
                 node_idx, split, cand_score, left_idx, cand_left, right_idx, cand_right,
             )
         return True, best_cand_data
@@ -205,7 +205,7 @@ class RidgeRegTree(Regressor):
         cut_values = min_score + np.arange(n_knots)/float(n_knots-1) * score_range
         for cut_value in cut_values:
             split = make_split_func(cut_value)
-            is_valid, best_cand_data = RidgeRegTree.update_best_candidate(
+            is_valid, best_cand_data = RidgeRegTree.eval_candidate(
                 sample_idx, scores, split, min_samples_leaf,
                 x, y, alpha, node_idx, node_ssq, best_cand_data,
             )
@@ -214,7 +214,7 @@ class RidgeRegTree(Regressor):
         if not has_found_valid_knot:
             cut_value = np.median(raw_scores)
             split = make_split_func(cut_value)
-            _, best_cand_data = RidgeRegTree.update_best_candidate(
+            _, best_cand_data = RidgeRegTree.eval_candidate(
                 sample_idx, scores, split, min_samples_leaf,
                 x, y, alpha, node_idx, node_ssq, best_cand_data,
             )
@@ -235,7 +235,11 @@ class RidgeRegTree(Regressor):
         if min_mse_decrease != 0.0:
             min_mse_decrease *= n
 
+        cand_data_init = RidgeRegTree.CandidateData(
+            None, None, -min_mse_decrease, None, None, None, None,
+        )
         tree = [TreeNode(RidgeRegTree.fit_and_eval(x, y, alpha), None)]
+        best_candidates = [None]
         depths = [1]
         sample_idxs = [np.array(range(n))]
         coords = np.array(range(d), dtype=int)
@@ -247,9 +251,7 @@ class RidgeRegTree(Regressor):
                 ))
             if max_leaf_nodes is not None and n_leaf_nodes >= max_leaf_nodes:
                 break
-            best_cand_data = RidgeRegTree.BestCandData(
-                None, None, -min_mse_decrease, None, None, None, None,
-            )
+            best_cand_data = cand_data_init
             if max_features > 0:
                 self.random_state.shuffle(coords)
             for node_idx, sample_idx in enumerate(sample_idxs):
@@ -257,41 +259,53 @@ class RidgeRegTree(Regressor):
                     continue
                 if max_depth is not None and depths[node_idx] >= max_depth:
                     continue
-                node_ssq = tree[node_idx].data[1]
-                xnode = x[sample_idx, :]
-                ynode = y[sample_idx, :]
-                if max_features > 0:
-                    for coord in coords[:max_features]:
-                        best_cand_data = self.eval_split(
-                            xnode[:, coord],
-                            lambda cut_value: CoordSplit(coord, cut_value),
-                            sample_idx, min_samples_leaf, n_knots,
-                            x, y, alpha, node_idx, node_ssq, best_cand_data,
-                        )
-                if n_random_direction > 0:
-                    rand_dirs = self.random_state.randn(n, d)
-                    rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, np.newaxis]
-                    for rand_dir_idx in range(n_random_direction):
-                        rand_dir = rand_dirs[rand_dir_idx, :]
-                        best_cand_data = self.eval_split(
-                            xnode.dot(rand_dir),
-                            lambda cut_value: VectorSplit(rand_dir, cut_value),
-                            sample_idx, min_samples_leaf, n_knots,
-                            x, y, alpha, node_idx, node_ssq, best_cand_data,
-                        )
+                node_cand_data = best_candidates[node_idx]
+                if node_cand_data is None:
+                    node_cand_data = cand_data_init
+                    node_ssq = tree[node_idx].data[1]
+                    xnode = x[sample_idx, :]
+                    ynode = y[sample_idx, :]
+                    if max_features > 0:
+                        for coord in coords[:max_features]:
+                            node_cand_data = self.eval_split(
+                                xnode[:, coord],
+                                lambda cut_value: CoordSplit(coord, cut_value),
+                                sample_idx, min_samples_leaf, n_knots,
+                                x, y, alpha, node_idx, node_ssq, node_cand_data,
+                            )
+                    if n_random_direction > 0:
+                        rand_dirs = self.random_state.randn(n, d)
+                        rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, np.newaxis]
+                        for rand_dir_idx in range(n_random_direction):
+                            rand_dir = rand_dirs[rand_dir_idx, :]
+                            node_cand_data = self.eval_split(
+                                xnode.dot(rand_dir),
+                                lambda cut_value: VectorSplit(rand_dir, cut_value),
+                                sample_idx, min_samples_leaf, n_knots,
+                                x, y, alpha, node_idx, node_ssq, node_cand_data,
+                            )
+                    if node_cand_data.idx is None:
+                        node_cand_data = '-'
+                    best_candidates[node_idx] = node_cand_data
+                if node_cand_data != '-' and node_cand_data.score < best_cand_data.score:
+                    best_cand_data = node_cand_data
 
             if best_cand_data.idx is None:
                 break  # stop because we did not find any valid candidate
 
             tree[best_cand_data.idx] = TreeNode(best_cand_data.split, len(tree))
             sample_idxs[best_cand_data.idx] = None
+            n_leaf_nodes += 1  # splitting replaces a leaf node by two
+            # add left child
             tree.append(TreeNode(best_cand_data.left, None))
+            best_candidates.append(None)
             depths.append(depths[best_cand_data.idx] + 1)
             sample_idxs.append(best_cand_data.left_idx)
+            # add right child
             tree.append(TreeNode(best_cand_data.right, None))
+            best_candidates.append(None)
             depths.append(depths[best_cand_data.idx] + 1)
             sample_idxs.append(best_cand_data.right_idx)
-            n_leaf_nodes += 1  # splitting replaces a leaf node by two
 
         tree = [node.data[0] if node.child_idx is None else node for node in tree]
         self.tree_ = tuple(tree)

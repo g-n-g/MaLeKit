@@ -8,6 +8,35 @@ from gandgai.regressor.ridgeregtree import RidgeRegTree
 class RidgeRegForest(Regressor):
     """Ridge regression forest.
 
+    Attributes
+    ----------
+    n_estimators: positive int, or float, or str
+        Number of trees to train in the forest.
+
+        A float number is interpreted as the fraction of the number of samples
+        ceiled to the closest integer. String format is evaluated with n being
+        the number of samples and d being the number of features. Numpy
+        functions can be used, for example 'd*np.log(n)', and the result is
+        ceiled to the closest integer.
+
+    bootstrap: boolean
+        If False, each tree training uses all the training data. Otherwise,
+        if True, max_samples number of samples are drawn randomly with
+        replacement for each tree training (as for bagging).
+
+    max_samples: None, or int, or float, or str
+        Specifies the number of samples to be drawn randomly (with replacement)
+        for each tree training. It only has effect if bootstrap is True.
+
+        None means as many samples as in the original dataset. A float number
+        is interpreted as the fraction of the number of samples in the original
+        dataset ceiled to the closest integer. String format is evaluated with
+        n being the number of samples and d being the number of features. Numpy
+        functions can be used, for example 'd*np.log(n)', and the result is
+        ceiled to the closest integer.
+
+    The rest of the attributes are the same as for
+    gandgai.regressor.RidgeRegTree.
     """
     def __init__(
         self,
