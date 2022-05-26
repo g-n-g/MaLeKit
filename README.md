@@ -6,8 +6,7 @@ of some non-standard machine learning algorithms.
 -------------------------------------------------------------------------------
 # Algorithms
 
-*RidgeRegTree* and *RidgeRegForest*
-Ridge Regression Tree and Forest
+### Ridge Regression Tree and Forest
 
 -------------------------------------------------------------------------------
 # Python
