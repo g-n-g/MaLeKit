@@ -1,4 +1,5 @@
 
+import heapq
 import numpy as np
 from collections import namedtuple
 
@@ -161,7 +162,7 @@ class RidgeRegTree(Regressor):
         return (lmp, np.sum(z))
 
     CandidateData = namedtuple(
-        "CandidateData", "idx split score left_idx, left right_idx right",
+        "CandidateData", "dssq idx split left_idx, left right_idx right",
     )
 
     @staticmethod
@@ -179,10 +180,10 @@ class RidgeRegTree(Regressor):
 
         cand_left = RidgeRegTree.fit_and_eval(x[left_idx, :], y[left_idx, :], alpha)
         cand_right = RidgeRegTree.fit_and_eval(x[right_idx, :], y[right_idx, :], alpha)
-        cand_score = cand_left[1] + cand_right[1] - node_ssq
-        if cand_score < best_cand_data.score:
+        cand_dssq = cand_left[1] + cand_right[1] - node_ssq
+        if cand_dssq < best_cand_data.dssq:
             best_cand_data = RidgeRegTree.CandidateData(
-                node_idx, split, cand_score, left_idx, cand_left, right_idx, cand_right,
+                cand_dssq, node_idx, split, left_idx, cand_left, right_idx, cand_right,
             )
         return True, best_cand_data
 
@@ -236,10 +237,10 @@ class RidgeRegTree(Regressor):
             min_mse_decrease *= n
 
         cand_data_init = RidgeRegTree.CandidateData(
-            None, None, -min_mse_decrease, None, None, None, None,
+            -min_mse_decrease, None, None, None, None, None, None,
         )
         tree = [TreeNode(RidgeRegTree.fit_and_eval(x, y, alpha), None)]
-        best_candidates = [None]
+        candidates = []
         depths = [1]
         sample_idxs = [np.array(range(n))]
         coords = np.array(range(d), dtype=int)
@@ -251,59 +252,60 @@ class RidgeRegTree(Regressor):
                 ))
             if max_leaf_nodes is not None and n_leaf_nodes >= max_leaf_nodes:
                 break
-            best_cand_data = cand_data_init
             if max_features > 0:
                 self.random_state.shuffle(coords)
-            for node_idx, sample_idx in enumerate(sample_idxs):
+
+            tree_size = len(tree)
+            for node_idx in range(max(0, tree_size-2), tree_size):
+                sample_idx = sample_idxs[node_idx]
                 if sample_idx is None or len(sample_idx) < min_samples_split:
                     continue
                 if max_depth is not None and depths[node_idx] >= max_depth:
                     continue
-                node_cand_data = best_candidates[node_idx]
-                if node_cand_data is None:
-                    node_cand_data = cand_data_init
-                    node_ssq = tree[node_idx].data[1]
-                    xnode = x[sample_idx, :]
-                    ynode = y[sample_idx, :]
-                    if max_features > 0:
-                        for coord in coords[:max_features]:
-                            node_cand_data = self.eval_split(
-                                xnode[:, coord],
-                                lambda cut_value: CoordSplit(coord, cut_value),
-                                sample_idx, min_samples_leaf, n_knots,
-                                x, y, alpha, node_idx, node_ssq, node_cand_data,
-                            )
-                    if n_random_direction > 0:
-                        rand_dirs = self.random_state.randn(n, d)
-                        rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, np.newaxis]
-                        for rand_dir_idx in range(n_random_direction):
-                            rand_dir = rand_dirs[rand_dir_idx, :]
-                            node_cand_data = self.eval_split(
-                                xnode.dot(rand_dir),
-                                lambda cut_value: VectorSplit(rand_dir, cut_value),
-                                sample_idx, min_samples_leaf, n_knots,
-                                x, y, alpha, node_idx, node_ssq, node_cand_data,
-                            )
-                    if node_cand_data.idx is None:
-                        node_cand_data = '-'
-                    best_candidates[node_idx] = node_cand_data
-                if node_cand_data != '-' and node_cand_data.score < best_cand_data.score:
-                    best_cand_data = node_cand_data
+                node_cand_data = cand_data_init
+                node_ssq = tree[node_idx].data[1]
+                xnode = x[sample_idx, :]
+                ynode = y[sample_idx, :]
+                if max_features > 0:
+                    for coord in coords[:max_features]:
+                        node_cand_data = self.eval_split(
+                            xnode[:, coord],
+                            lambda cut_value: CoordSplit(coord, cut_value),
+                            sample_idx, min_samples_leaf, n_knots,
+                            x, y, alpha, node_idx, node_ssq, node_cand_data,
+                        )
+                if n_random_direction > 0:
+                    rand_dirs = self.random_state.randn(n, d)
+                    rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, np.newaxis]
+                    for rand_dir_idx in range(n_random_direction):
+                        rand_dir = rand_dirs[rand_dir_idx, :]
+                        node_cand_data = self.eval_split(
+                            xnode.dot(rand_dir),
+                            lambda cut_value: VectorSplit(rand_dir, cut_value),
+                            sample_idx, min_samples_leaf, n_knots,
+                            x, y, alpha, node_idx, node_ssq, node_cand_data,
+                        )
+                if node_cand_data.idx is not None:
+                    heapq.heappush(candidates, node_cand_data)
+                    if self.verbose >= 2:
+                        self.log_func(
+                            'RRT, new candidate, node_idx: {}, dssq: {}'.format(
+                                node_idx, node_cand_data.dssq,
+                            ))
 
-            if best_cand_data.idx is None:
+            if len(candidates) == 0:
                 break  # stop because we did not find any valid candidate
 
-            tree[best_cand_data.idx] = TreeNode(best_cand_data.split, len(tree))
+            best_cand_data = heapq.heappop(candidates)
+            tree[best_cand_data.idx] = TreeNode(best_cand_data.split, tree_size)
             sample_idxs[best_cand_data.idx] = None
             n_leaf_nodes += 1  # splitting replaces a leaf node by two
             # add left child
             tree.append(TreeNode(best_cand_data.left, None))
-            best_candidates.append(None)
             depths.append(depths[best_cand_data.idx] + 1)
             sample_idxs.append(best_cand_data.left_idx)
             # add right child
             tree.append(TreeNode(best_cand_data.right, None))
-            best_candidates.append(None)
             depths.append(depths[best_cand_data.idx] + 1)
             sample_idxs.append(best_cand_data.right_idx)
 
@@ -314,7 +316,7 @@ class RidgeRegTree(Regressor):
         tree = self.tree_
         yhat = np.empty((x.shape[0], max(1, self.n_outputs_)))
         yhat[:] = np.nan
-        evals = [(0, np.array(range(x.shape[0])))]
+        evals = [(0, np.arange(x.shape[0]))]
         while len(evals) > 0:
             node_idx, sample_idx = evals.pop()
             node = tree[node_idx]

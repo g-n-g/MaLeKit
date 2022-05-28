@@ -105,7 +105,7 @@ class TestRidgeRegTree_2:
     def test_max_leaf_nodes(self):
         x = self.x
         y = self.y
-        rrt = RidgeRegTree(max_leaf_nodes=7, random_state=17)
+        rrt = RidgeRegTree(max_leaf_nodes=7, random_state=17, verbose=2)
         rrt.fit(x, y)
         assert len(rrt.tree_) == 13, len(rrt.tree_)
         yhat = rrt.predict(x)
