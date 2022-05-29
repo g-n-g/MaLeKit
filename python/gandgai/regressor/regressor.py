@@ -120,18 +120,24 @@ class Regressor:
         return value
 
     @staticmethod
-    def ridge_fit(x, y, alpha):
+    def ridge_fit(x, y, alpha, xx=None, xy=None, xsum=None, ysum=None):
         n = float(x.shape[0])
         one_per_sqrtn = 1.0 / np.sqrt(n)
-        xx = x.T.dot(x)
-        xy = x.T.dot(y)
-        xbar = np.sum(x, axis=0)
-        xbar *= one_per_sqrtn
-        xx -= np.outer(xbar, xbar)
+        if xx is None:
+            xbar = np.sum(x, axis=0)
+            ybar = np.sum(y, axis=0)
+            xbar *= one_per_sqrtn
+            ybar *= one_per_sqrtn
+            xx = x.T.dot(x)
+            xy = x.T.dot(y)
+            xx -= np.outer(xbar, xbar)
+            xy -= np.outer(xbar, ybar)
+        else:
+            xbar = xsum * one_per_sqrtn
+            ybar = ysum * one_per_sqrtn
+            xx = xx - np.outer(xbar, xbar)
+            xy = xy - np.outer(xbar, ybar)
         xx.flat[::xx.shape[1]+1] += alpha * n
-        ybar = np.sum(y, axis=0)
-        ybar *= one_per_sqrtn
-        xy -= np.outer(xbar, ybar)
         slope = linalg.solve(
             xx, xy,
             assume_a='pos', check_finite=False,

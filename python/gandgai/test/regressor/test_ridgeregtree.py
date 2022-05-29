@@ -52,7 +52,7 @@ class TestRidgeRegTree_1:
         assert isinstance(rrt.tree_[1], LinearModelParams), rrt.tree_[1]
         assert isinstance(rrt.tree_[2], LinearModelParams), rrt.tree_[2]
         yhat = rrt.predict(x)
-        assert np.allclose(y, yhat)
+        assert np.allclose(y, yhat), (yhat, y)
         mse = Regressor.mse(yhat, y)
         assert np.allclose(mse, 0.0), mse
         score = rrt.score(x, y)
@@ -65,7 +65,7 @@ class TestRidgeRegTree_1:
         rrt.fit(x, y)
         assert len(rrt.tree_) == 11, rrt.tree_
         yhat = rrt.predict(x)
-        assert np.allclose(y, yhat)
+        assert np.allclose(y, yhat), (y, yhat)
         mse = Regressor.mse(yhat, y)
         assert np.allclose(mse, 0.0), mse
         score = rrt.score(x, y)

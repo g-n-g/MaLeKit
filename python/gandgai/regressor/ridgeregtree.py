@@ -154,8 +154,8 @@ class RidgeRegTree(Regressor):
         self.log_func = log_func
 
     @staticmethod
-    def fit_and_eval(x, y, alpha):
-        lmp = Regressor.ridge_fit(x, y, alpha)
+    def fit_and_eval(x, y, alpha, xx=None, xy=None, xsum=None, ysum=None):
+        lmp = Regressor.ridge_fit(x, y, alpha, xx, xy, xsum, ysum)
         z = Regressor.linear_predict(x, lmp)
         z -= y
         np.square(z, out=z)
@@ -182,9 +182,58 @@ class RidgeRegTree(Regressor):
         x, y, alpha, node_idx, node_ssq, best_cand_data,
     ):
         scores, min_score, score_range = self.get_scores(raw_scores)
-        cut_values = min_score + knots * score_range
-        for cut_value in cut_values:
-            mask = (scores <= cut_value)
+        cut_bin = np.digitize((scores - min_score) / score_range, knots, right=True)
+        cut_xx = []
+        cut_xy = []
+        cut_xsum = []
+        cut_ysum = []
+        masks = []
+        left_xx = None
+        left_xy = None
+        left_xsum = None
+        left_ysum = None
+        right_xx = None
+        right_xy = None
+        right_xsum = None
+        right_ysum = None
+        for cut_idx in range(len(knots)+1):
+            mask = cut_bin == cut_idx
+            idx = sample_idx[mask]
+            xidx = x[idx, :]
+            yidx = y[idx, :]
+            cut_xx.append(xidx.T.dot(xidx))
+            cut_xy.append(xidx.T.dot(yidx))
+            cut_xsum.append(np.sum(xidx, axis=0))
+            cut_ysum.append(np.sum(yidx, axis=0))
+            if cut_idx == 0:
+                left_xx = cut_xx[0].copy()
+                left_xy = cut_xy[0].copy()
+                left_xsum = cut_xsum[0].copy()
+                left_ysum = cut_ysum[0].copy()
+            elif cut_idx == 1:
+                right_xx = cut_xx[-1].copy()
+                right_xy = cut_xy[-1].copy()
+                right_xsum = cut_xsum[-1].copy()
+                right_ysum = cut_ysum[-1].copy()
+                mask |= masks[-1]
+            else:
+                right_xx += cut_xx[-1]
+                right_xy += cut_xy[-1]
+                right_xsum += cut_xsum[-1]
+                right_ysum += cut_ysum[-1]
+                mask |= masks[-1]
+            masks.append(mask)
+        for cut_idx in range(len(knots)):
+            if cut_idx > 0:
+                left_xx += cut_xx[cut_idx]
+                left_xy += cut_xy[cut_idx]
+                left_xsum += cut_xsum[cut_idx]
+                left_ysum += cut_ysum[cut_idx]
+                right_xx -= cut_xx[cut_idx]
+                right_xy -= cut_xy[cut_idx]
+                right_xsum -= cut_xsum[cut_idx]
+                right_ysum -= cut_ysum[cut_idx]
+            mask = masks[cut_idx]
             left_idx = sample_idx[mask]
             if len(left_idx) < min_samples_leaf:
                 continue
@@ -192,11 +241,17 @@ class RidgeRegTree(Regressor):
             if len(right_idx) < min_samples_leaf:
                 continue
 
-            cand_left = RidgeRegTree.fit_and_eval(x[left_idx, :], y[left_idx, :], alpha)
-            cand_right = RidgeRegTree.fit_and_eval(x[right_idx, :], y[right_idx, :], alpha)
+            cand_left = RidgeRegTree.fit_and_eval(
+                x[left_idx, :], y[left_idx, :], alpha,
+                left_xx, left_xy, left_xsum, left_ysum,
+            )
+            cand_right = RidgeRegTree.fit_and_eval(
+                x[right_idx, :], y[right_idx, :], alpha,
+                right_xx, right_xy, right_xsum, right_ysum,
+            )
             cand_dssq = cand_left[1] + cand_right[1] - node_ssq
             if cand_dssq < best_cand_data.dssq:
-                split = make_split_func(cut_value)
+                split = make_split_func(min_score + knots[cut_idx] * score_range)
                 best_cand_data = RidgeRegTree.CandidateData(
                     cand_dssq, node_idx, split, left_idx, cand_left, right_idx, cand_right,
                 )
