@@ -22,6 +22,7 @@ pip install --upgrade setuptools
 
 pip install nose
 pip install numpy
+pip install scipy
 pip install joblib
 ```
 

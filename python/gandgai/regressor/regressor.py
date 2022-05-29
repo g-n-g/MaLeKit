@@ -1,5 +1,6 @@
 
 import numpy as np
+from scipy import linalg
 from collections import namedtuple
 
 
@@ -121,19 +122,23 @@ class Regressor:
     @staticmethod
     def ridge_fit(x, y, alpha):
         n = float(x.shape[0])
-        sqrtn = np.sqrt(n)
+        one_per_sqrtn = 1.0 / np.sqrt(n)
         xx = x.T.dot(x)
         xy = x.T.dot(y)
         xbar = np.sum(x, axis=0)
-        xbar /= sqrtn
+        xbar *= one_per_sqrtn
         xx -= np.outer(xbar, xbar)
-        xx.ravel()[::xx.shape[1]+1] += alpha * n
+        xx.flat[::xx.shape[1]+1] += alpha * n
         ybar = np.sum(y, axis=0)
-        ybar /= sqrtn
+        ybar *= one_per_sqrtn
         xy -= np.outer(xbar, ybar)
-        slope = np.linalg.solve(xx, xy)
+        slope = linalg.solve(
+            xx, xy,
+            assume_a='pos', check_finite=False,
+            overwrite_a=True, overwrite_b=True,
+        )
         ybar -= xbar.dot(slope)
-        ybar /= sqrtn
+        ybar *= one_per_sqrtn
         return LinearModelParams(slope, ybar)
 
     @staticmethod

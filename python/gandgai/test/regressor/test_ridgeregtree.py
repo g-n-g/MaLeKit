@@ -100,53 +100,57 @@ class TestRidgeRegTree_2:
         assert len(rrt.tree_) == 15, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 0.895536), mse
+        assert np.allclose(mse, 0.886653), mse
 
     def test_max_leaf_nodes(self):
-        x = self.x
-        y = self.y
-        rrt = RidgeRegTree(max_leaf_nodes=7, random_state=17, verbose=2)
+        x = self.x.copy()
+        y = self.y.copy()
+        rrt = RidgeRegTree(max_leaf_nodes=7, random_state=17)
         rrt.fit(x, y)
         assert len(rrt.tree_) == 13, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.094354), mse
+        assert np.allclose(mse, 1.341134), mse
+        assert np.allclose(x, self.x)
+        assert np.allclose(y, self.y)
 
     def test_min_samples_leaf(self):
         x = self.x
         y = self.y
-        rrt = RidgeRegTree(min_samples_leaf=100, random_state=19)
+        rrt = RidgeRegTree(min_samples_leaf=100, random_state=19, verbose=2)
         rrt.fit(x, y)
         assert len(rrt.tree_) == 29, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.8485992), mse
+        assert np.allclose(mse, 1.525537), mse
 
     def test_max_features(self):
         x = self.x
         y = self.y
         rrt = RidgeRegTree(min_samples_leaf=100, random_state=19, max_features=2)
         rrt.fit(x, y)
-        assert len(rrt.tree_) == 25, len(rrt.tree_)
+        assert len(rrt.tree_) == 27, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.156318), mse
+        assert np.allclose(mse, 1.286623), mse
 
     def test_random_directions(self):
-        x = self.x
-        y = self.y
+        x = self.x.copy()
+        y = self.y.copy()
         rrt = RidgeRegTree(min_samples_leaf=100, random_state=19,
                            max_features=0, n_random_direction=2)
         rrt.fit(x, y)
         assert len(rrt.tree_) == 25, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.31805), mse
+        assert np.allclose(mse, 1.532984), mse
+        assert np.allclose(x, self.x)
+        assert np.allclose(y, self.y)
 
     def test_n_knots(self):
         x = self.x
         y = self.y
-        rrt = RidgeRegTree(min_samples_leaf=100, random_state=19, n_knots='5*d')
+        rrt = RidgeRegTree(min_samples_leaf=100, random_state=19, n_knots='5*d-2')
         rrt.fit(x, y)
         assert len(rrt.tree_) == 27, len(rrt.tree_)
         yhat = rrt.predict(x)
@@ -161,17 +165,17 @@ class TestRidgeRegTree_2:
         assert len(rrt.tree_) == 19, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 1.6027), mse
+        assert np.allclose(mse, 2.091384), mse
 
     def test_min_mse_decrease(self):
         x = self.x
         y = self.y
         rrt = RidgeRegTree(min_mse_decrease=0.25, random_state=29)
         rrt.fit(x, y)
-        assert len(rrt.tree_) == 17, len(rrt.tree_)
+        assert len(rrt.tree_) == 15, len(rrt.tree_)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 0.771936), mse
+        assert np.allclose(mse, 0.886653), mse
 
     def test_pickle(self):
         x = self.x
@@ -183,4 +187,4 @@ class TestRidgeRegTree_2:
         rrt = pickle.loads(pickled_rrt)
         yhat = rrt.predict(x)
         mse = Regressor.mse(yhat, y)
-        assert np.allclose(mse, 0.7246), mse
+        assert np.allclose(mse, 0.781311), mse

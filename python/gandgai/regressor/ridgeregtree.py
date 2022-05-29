@@ -116,7 +116,7 @@ class RidgeRegTree(Regressor):
         self,
         alpha=1e-6,
         # splitting parameters:
-        n_knots=10,
+        n_knots=9,
         jitter_tol=1e-6,
         max_features=None,
         n_random_direction=0,
@@ -165,60 +165,41 @@ class RidgeRegTree(Regressor):
         "CandidateData", "dssq idx split left_idx, left right_idx right",
     )
 
-    @staticmethod
-    def eval_candidate(
-        sample_idx, scores, split, min_samples_leaf,
-        x, y, alpha, node_idx, node_ssq, best_cand_data,
-    ):
-        mask = (scores <= split.cut_value)
-        left_idx = sample_idx[mask]
-        if len(left_idx) < min_samples_leaf:
-            return False, best_cand_data
-        right_idx = sample_idx[~mask]
-        if len(right_idx) < min_samples_leaf:
-            return False, best_cand_data
-
-        cand_left = RidgeRegTree.fit_and_eval(x[left_idx, :], y[left_idx, :], alpha)
-        cand_right = RidgeRegTree.fit_and_eval(x[right_idx, :], y[right_idx, :], alpha)
-        cand_dssq = cand_left[1] + cand_right[1] - node_ssq
-        if cand_dssq < best_cand_data.dssq:
-            best_cand_data = RidgeRegTree.CandidateData(
-                cand_dssq, node_idx, split, left_idx, cand_left, right_idx, cand_right,
-            )
-        return True, best_cand_data
-
     def get_scores(self, scores):
         min_score = np.min(scores)
         score_range = np.max(scores) - min_score
         if score_range < self.jitter_tol:
-            scores = scores + self.jitter_tol * self.random_state.randn(*scores.shape)
+            noise = self.random_state.randn(*scores.shape)
+            noise *= self.jitter_tol
+            scores = scores + noise
             min_score = np.min(scores)
             score_range = np.max(scores) - min_score
         return scores, min_score, score_range
 
     def eval_split(
         self, raw_scores, make_split_func,
-        sample_idx, min_samples_leaf, n_knots,
+        sample_idx, min_samples_leaf, knots,
         x, y, alpha, node_idx, node_ssq, best_cand_data,
     ):
         scores, min_score, score_range = self.get_scores(raw_scores)
-        has_found_valid_knot = False
-        cut_values = min_score + np.arange(n_knots)/float(n_knots-1) * score_range
+        cut_values = min_score + knots * score_range
         for cut_value in cut_values:
-            split = make_split_func(cut_value)
-            is_valid, best_cand_data = RidgeRegTree.eval_candidate(
-                sample_idx, scores, split, min_samples_leaf,
-                x, y, alpha, node_idx, node_ssq, best_cand_data,
-            )
-            if not has_found_valid_knot and is_valid:
-                has_found_valid_knot = True
-        if not has_found_valid_knot:
-            cut_value = np.median(raw_scores)
-            split = make_split_func(cut_value)
-            _, best_cand_data = RidgeRegTree.eval_candidate(
-                sample_idx, scores, split, min_samples_leaf,
-                x, y, alpha, node_idx, node_ssq, best_cand_data,
-            )
+            mask = (scores <= cut_value)
+            left_idx = sample_idx[mask]
+            if len(left_idx) < min_samples_leaf:
+                continue
+            right_idx = sample_idx[~mask]
+            if len(right_idx) < min_samples_leaf:
+                continue
+
+            cand_left = RidgeRegTree.fit_and_eval(x[left_idx, :], y[left_idx, :], alpha)
+            cand_right = RidgeRegTree.fit_and_eval(x[right_idx, :], y[right_idx, :], alpha)
+            cand_dssq = cand_left[1] + cand_right[1] - node_ssq
+            if cand_dssq < best_cand_data.dssq:
+                split = make_split_func(cut_value)
+                best_cand_data = RidgeRegTree.CandidateData(
+                    cand_dssq, node_idx, split, left_idx, cand_left, right_idx, cand_right,
+                )
         return best_cand_data
 
     def _fit(self, x, y):
@@ -242,9 +223,10 @@ class RidgeRegTree(Regressor):
         tree = [TreeNode(RidgeRegTree.fit_and_eval(x, y, alpha), None)]
         candidates = []
         depths = [1]
-        sample_idxs = [np.array(range(n))]
-        coords = np.array(range(d), dtype=int)
+        sample_idxs = [np.arange(n)]
+        coords = np.arange(d)
         n_leaf_nodes = 1
+        knots = (np.arange(n_knots+2)/float(n_knots+1))[1:-1]
         while True:
             if self.verbose >= 1:
                 self.log_func('RRT, depth: {}, n_leaf_nodes: {}'.format(
@@ -271,7 +253,7 @@ class RidgeRegTree(Regressor):
                         node_cand_data = self.eval_split(
                             xnode[:, coord],
                             lambda cut_value: CoordSplit(coord, cut_value),
-                            sample_idx, min_samples_leaf, n_knots,
+                            sample_idx, min_samples_leaf, knots,
                             x, y, alpha, node_idx, node_ssq, node_cand_data,
                         )
                 if n_random_direction > 0:
@@ -282,7 +264,7 @@ class RidgeRegTree(Regressor):
                         node_cand_data = self.eval_split(
                             xnode.dot(rand_dir),
                             lambda cut_value: VectorSplit(rand_dir, cut_value),
-                            sample_idx, min_samples_leaf, n_knots,
+                            sample_idx, min_samples_leaf, knots,
                             x, y, alpha, node_idx, node_ssq, node_cand_data,
                         )
                 if node_cand_data.idx is not None:
