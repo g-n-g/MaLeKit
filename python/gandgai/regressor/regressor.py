@@ -54,7 +54,7 @@ class Regressor:
     @staticmethod
     def parse_int_param(
         spec, n, d,
-        min_value=None, max_value=None, default=None, allow_none=False,
+        min_value=None, max_value=None, default=None, allow_none=False, float_ref=None,
     ):
         """Returns the integer parameter value based on its specification.
 
@@ -72,7 +72,9 @@ class Regressor:
         elif isinstance(spec, int):
             value = spec
         elif isinstance(spec, float):
-            value = int(np.ceil(spec * n))
+            if float_ref is None:
+                float_ref = n
+            value = int(np.ceil(spec * float_ref))
         elif isinstance(spec, str):
             value = int(np.ceil(eval(spec)))
         else:

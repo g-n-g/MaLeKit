@@ -22,7 +22,7 @@ class RidgeRegTree(Regressor):
     n_knots: positive int, or float in (0,1], or str
         Number of knots to check along a split direction.
 
-        A float number is interpreted as the fraction of the number of samples
+        A float number is interpreted as the fraction of the number of features
         ceiled to the closest integer. String format is evaluated with n being
         the number of samples and d being the number of features. Numpy
         functions can be used, for example 'd*np.log(n)', and the result is
@@ -40,7 +40,7 @@ class RidgeRegTree(Regressor):
         differently in different iterations.
 
         None means all available features. A float number is interpreted as the
-        fraction of the number of samples ceiled to the closest integer. String
+        fraction of the number of features ceiled to the closest integer. String
         format is evaluated with n being the number of samples and d being the
         number of features. Numpy functions can be used, for example
         'd*np.log(n)', and the result is ceiled to the closest integer.
@@ -52,7 +52,7 @@ class RidgeRegTree(Regressor):
     n_random_direction: nonnegative int, or float in [0,1], or str
         Number of random directions to be searched along for each split.
 
-        A float number is interpreted as the fraction of the number of samples
+        A float number is interpreted as the fraction of the number of features
         ceiled to the closest integer. String format is evaluated with n being
         the number of samples and d being the number of features. Numpy
         functions can be used, for example 'd*np.log(n)', and the result is
@@ -304,11 +304,13 @@ class RidgeRegTree(Regressor):
         k = y.shape[1]
 
         alpha = Regressor.parse_float_param(self.alpha, n, d, 0)
-        n_knots = Regressor.parse_int_param(self.n_knots, n, d, 1)
+        n_knots = Regressor.parse_int_param(self.n_knots, n, d, 1, float_ref=d)
         max_depth = Regressor.parse_int_param(self.max_depth, n, d, 1, allow_none=True)
-        max_features = Regressor.parse_int_param(self.max_features, n, d, 0, d, d)
+        max_features = Regressor.parse_int_param(self.max_features, n, d, 0, d, d, float_ref=d)
         max_leaf_nodes = Regressor.parse_int_param(self.max_leaf_nodes, n, d, 0, allow_none=True)
-        n_random_direction = Regressor.parse_int_param(self.n_random_direction, n, d, 0, None, 0)
+        n_random_direction = Regressor.parse_int_param(
+            self.n_random_direction, n, d, 0, None, 0, float_ref=d,
+        )
         min_samples_split = Regressor.parse_int_param(self.min_samples_split, n, d, 0)
         min_samples_leaf = Regressor.parse_int_param(self.min_samples_leaf, n, d, 0)
         min_mse_decrease = Regressor.parse_float_param(self.min_mse_decrease, n, d, 0)
