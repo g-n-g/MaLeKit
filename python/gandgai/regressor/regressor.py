@@ -120,7 +120,10 @@ class Regressor:
         return value
 
     @staticmethod
-    def ridge_fit(x, y, alpha, xx=None, xy=None, xsum=None, ysum=None):
+    def ridge_fit(
+        x, y, alpha,
+        xx=None, xy=None, xsum=None, ysum=None, tmp_d=None, tmp_dd=None, tmp_dk=None,
+    ):
         n = float(x.shape[0])
         one_per_sqrtn = 1.0 / np.sqrt(n)
         if xx is None:
@@ -133,10 +136,10 @@ class Regressor:
             xx -= np.outer(xbar, xbar)
             xy -= np.outer(xbar, ybar)
         else:
-            xbar = xsum * one_per_sqrtn
-            ybar = ysum * one_per_sqrtn
-            xx = xx - np.outer(xbar, xbar)
-            xy = xy - np.outer(xbar, ybar)
+            xbar = np.multiply(xsum, one_per_sqrtn, out=tmp_d)
+            ybar = ysum * one_per_sqrtn  # we need the copy here
+            xx = xx - np.outer(xbar, xbar, out=tmp_dd)
+            xy = xy - np.outer(xbar, ybar, out=tmp_dk)
         xx.flat[::xx.shape[1]+1] += alpha * n
         slope = linalg.solve(
             xx, xy,

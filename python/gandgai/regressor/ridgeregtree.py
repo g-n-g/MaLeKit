@@ -154,8 +154,11 @@ class RidgeRegTree(Regressor):
         self.log_func = log_func
 
     @staticmethod
-    def fit_and_eval(x, y, alpha, xx=None, xy=None, xsum=None, ysum=None):
-        lmp = Regressor.ridge_fit(x, y, alpha, xx, xy, xsum, ysum)
+    def fit_and_eval(
+        x, y, alpha,
+        xx=None, xy=None, xsum=None, ysum=None, tmp_d=None, tmp_dd=None, tmp_dk=None,
+    ):
+        lmp = Regressor.ridge_fit(x, y, alpha, xx, xy, xsum, ysum, tmp_d, tmp_dd, tmp_dk)
         z = Regressor.linear_predict(x, lmp)
         z -= y
         np.square(z, out=z)
@@ -176,89 +179,129 @@ class RidgeRegTree(Regressor):
             score_range = np.max(scores) - min_score
         return scores, min_score, score_range
 
-    def eval_split(
-        self, raw_scores, make_split_func,
-        sample_idx, min_samples_leaf, knots,
-        x, y, alpha, node_idx, node_ssq, best_cand_data,
+    @staticmethod
+    def _prepare_matrices(
+        normed_scores, knots, x, y, sample_idx,
+        tmp_xx, tmp_xy, tmp_xsum, tmp_ysum,
+        tmp_left_xx, tmp_left_xy, tmp_left_xsum, tmp_left_ysum,
+        tmp_right_xx, tmp_right_xy, tmp_right_xsum, tmp_right_ysum,
     ):
-        scores, min_score, score_range = self.get_scores(raw_scores)
-        cut_bin = np.digitize((scores - min_score) / score_range, knots, right=True)
+        cut_bin = np.digitize(normed_scores, knots, right=True)
         cut_xx = []
         cut_xy = []
         cut_xsum = []
         cut_ysum = []
         masks = []
-        left_xx = None
-        left_xy = None
-        left_xsum = None
-        left_ysum = None
-        right_xx = None
-        right_xy = None
-        right_xsum = None
-        right_ysum = None
-        for cut_idx in range(len(knots)+1):
+        left_xx = tmp_left_xx
+        left_xy = tmp_left_xy
+        left_xsum = tmp_left_xsum
+        left_ysum = tmp_left_ysum
+        right_xx = tmp_right_xx
+        right_xy = tmp_right_xy
+        right_xsum = tmp_right_xsum
+        right_ysum = tmp_right_ysum
+        for cut_idx in np.arange(len(knots)+1, dtype=int):
             mask = cut_bin == cut_idx
             idx = sample_idx[mask]
             xidx = x[idx, :]
             yidx = y[idx, :]
-            cut_xx.append(xidx.T.dot(xidx))
-            cut_xy.append(xidx.T.dot(yidx))
-            cut_xsum.append(np.sum(xidx, axis=0))
-            cut_ysum.append(np.sum(yidx, axis=0))
+            xx = xidx.T.dot(xidx, out=tmp_xx[cut_idx])
+            xy = xidx.T.dot(yidx, out=tmp_xy[cut_idx])
+            xsum = np.sum(xidx, axis=0, out=tmp_xsum[cut_idx])
+            ysum = np.sum(yidx, axis=0, out=tmp_ysum[cut_idx])
+            cut_xx.append(xx)
+            cut_xy.append(xy)
+            cut_xsum.append(xsum)
+            cut_ysum.append(ysum)
             if cut_idx == 0:
-                left_xx = cut_xx[0].copy()
-                left_xy = cut_xy[0].copy()
-                left_xsum = cut_xsum[0].copy()
-                left_ysum = cut_ysum[0].copy()
+                left_xx[:] = xx
+                left_xy[:] = xy
+                left_xsum[:] = xsum
+                left_ysum[:] = ysum
             elif cut_idx == 1:
-                right_xx = cut_xx[-1].copy()
-                right_xy = cut_xy[-1].copy()
-                right_xsum = cut_xsum[-1].copy()
-                right_ysum = cut_ysum[-1].copy()
+                right_xx[:] = xx
+                right_xy[:] = xy
+                right_xsum[:] = xsum
+                right_ysum[:] = ysum
                 mask |= masks[-1]
             else:
-                right_xx += cut_xx[-1]
-                right_xy += cut_xy[-1]
-                right_xsum += cut_xsum[-1]
-                right_ysum += cut_ysum[-1]
+                right_xx += xx
+                right_xy += xy
+                right_xsum += xsum
+                right_ysum += ysum
                 mask |= masks[-1]
             masks.append(mask)
-        for cut_idx in range(len(knots)):
+        return (
+            masks,
+            cut_xx, cut_xy, cut_xsum, cut_ysum,
+            left_xx, left_xy, left_xsum, left_ysum,
+            right_xx, right_xy, right_xsum, right_ysum,
+        )
+
+    @staticmethod
+    def _update_matrices(left, right, cut):
+        left += cut
+        right -= cut
+
+    def eval_split(
+        self, raw_scores, make_split_func,
+        sample_idx, min_samples_leaf, knots,
+        x, y, alpha, node_idx, node_ssq, best_cand_data,
+        tmp_d, tmp_dd, tmp_dk, tmp_xx, tmp_xy, tmp_xsum, tmp_ysum,
+        tmp_left_xx, tmp_left_xy, tmp_left_xsum, tmp_left_ysum,
+        tmp_right_xx, tmp_right_xy, tmp_right_xsum, tmp_right_ysum,
+    ):
+        scores, min_score, score_range = self.get_scores(raw_scores)
+        (
+            masks,
+            cut_xx, cut_xy, cut_xsum, cut_ysum,
+            left_xx, left_xy, left_xsum, left_ysum,
+            right_xx, right_xy, right_xsum, right_ysum,
+        ) = RidgeRegTree._prepare_matrices(
+            (scores - min_score) / score_range,
+            knots,
+            x, y, sample_idx,
+            tmp_xx, tmp_xy, tmp_xsum, tmp_ysum,
+            tmp_left_xx, tmp_left_xy, tmp_left_xsum, tmp_left_ysum,
+            tmp_right_xx, tmp_right_xy, tmp_right_xsum, tmp_right_ysum,
+        )
+        for cut_idx, knot in enumerate(knots):
             if cut_idx > 0:
-                left_xx += cut_xx[cut_idx]
-                left_xy += cut_xy[cut_idx]
-                left_xsum += cut_xsum[cut_idx]
-                left_ysum += cut_ysum[cut_idx]
-                right_xx -= cut_xx[cut_idx]
-                right_xy -= cut_xy[cut_idx]
-                right_xsum -= cut_xsum[cut_idx]
-                right_ysum -= cut_ysum[cut_idx]
+                RidgeRegTree._update_matrices(left_xx, right_xx, cut_xx[cut_idx])
+                RidgeRegTree._update_matrices(left_xy, right_xy, cut_xy[cut_idx])
+                RidgeRegTree._update_matrices(left_xsum, right_xsum, cut_xsum[cut_idx])
+                RidgeRegTree._update_matrices(left_ysum, right_ysum, cut_ysum[cut_idx])
+
             mask = masks[cut_idx]
             left_idx = sample_idx[mask]
-            if len(left_idx) < min_samples_leaf:
+            if (len(left_idx) < min_samples_leaf
+                or len(sample_idx)-min_samples_leaf < len(left_idx)
+            ):
                 continue
             right_idx = sample_idx[~mask]
-            if len(right_idx) < min_samples_leaf:
-                continue
 
             cand_left = RidgeRegTree.fit_and_eval(
                 x[left_idx, :], y[left_idx, :], alpha,
-                left_xx, left_xy, left_xsum, left_ysum,
+                left_xx, left_xy, left_xsum, left_ysum, tmp_d, tmp_dd, tmp_dk,
             )
             cand_right = RidgeRegTree.fit_and_eval(
                 x[right_idx, :], y[right_idx, :], alpha,
-                right_xx, right_xy, right_xsum, right_ysum,
+                right_xx, right_xy, right_xsum, right_ysum, tmp_d, tmp_dd, tmp_dk,
             )
             cand_dssq = cand_left[1] + cand_right[1] - node_ssq
             if cand_dssq < best_cand_data.dssq:
-                split = make_split_func(min_score + knots[cut_idx] * score_range)
+                split = make_split_func(
+                    min_score + knot * score_range
+                )
                 best_cand_data = RidgeRegTree.CandidateData(
-                    cand_dssq, node_idx, split, left_idx, cand_left, right_idx, cand_right,
+                    cand_dssq, node_idx, split,
+                    left_idx, cand_left, right_idx, cand_right,
                 )
         return best_cand_data
 
     def _fit(self, x, y):
         n, d = x.shape
+        k = y.shape[1]
 
         alpha = Regressor.parse_float_param(self.alpha, n, d, 0)
         n_knots = Regressor.parse_int_param(self.n_knots, n, d, 1)
@@ -272,16 +315,32 @@ class RidgeRegTree(Regressor):
         if min_mse_decrease != 0.0:
             min_mse_decrease *= n
 
+        tmp_d = np.empty(d)
+        tmp_dd = np.empty((d, d))
+        tmp_dk = np.empty((d, k))
+        tmp_xx = [np.empty((d, d)) for i in range(n_knots+1)]
+        tmp_xy = [np.empty((d, k)) for i in range(n_knots+1)]
+        tmp_xsum = [np.empty(d) for i in range(n_knots+1)]
+        tmp_ysum = [np.empty(k) for i in range(n_knots+1)]
+        tmp_left_xx = np.empty((d, d))
+        tmp_left_xy = np.empty((d, k))
+        tmp_left_xsum = np.empty(d)
+        tmp_left_ysum = np.empty(k)
+        tmp_right_xx = np.empty((d, d))
+        tmp_right_xy = np.empty((d, k))
+        tmp_right_xsum = np.empty(d)
+        tmp_right_ysum = np.empty(k)
+
         cand_data_init = RidgeRegTree.CandidateData(
             -min_mse_decrease, None, None, None, None, None, None,
         )
         tree = [TreeNode(RidgeRegTree.fit_and_eval(x, y, alpha), None)]
         candidates = []
         depths = [1]
-        sample_idxs = [np.arange(n)]
-        coords = np.arange(d)
+        sample_idxs = [np.arange(n, dtype=int)]
+        coords = np.arange(d, dtype=int)
         n_leaf_nodes = 1
-        knots = (np.arange(n_knots+2)/float(n_knots+1))[1:-1]
+        knots = (np.arange(n_knots+2, dtype=int)/float(n_knots+1))[1:-1]
         while True:
             if self.verbose >= 1:
                 self.log_func('RRT, depth: {}, n_leaf_nodes: {}'.format(
@@ -293,7 +352,7 @@ class RidgeRegTree(Regressor):
                 self.random_state.shuffle(coords)
 
             tree_size = len(tree)
-            for node_idx in range(max(0, tree_size-2), tree_size):
+            for node_idx in np.arange(max(0, tree_size-2), tree_size, dtype=int):
                 sample_idx = sample_idxs[node_idx]
                 if sample_idx is None or len(sample_idx) < min_samples_split:
                     continue
@@ -310,17 +369,23 @@ class RidgeRegTree(Regressor):
                             lambda cut_value: CoordSplit(coord, cut_value),
                             sample_idx, min_samples_leaf, knots,
                             x, y, alpha, node_idx, node_ssq, node_cand_data,
+                            tmp_d, tmp_dd, tmp_dk, tmp_xx, tmp_xy, tmp_xsum, tmp_ysum,
+                            tmp_left_xx, tmp_left_xy, tmp_left_xsum, tmp_left_ysum,
+                            tmp_right_xx, tmp_right_xy, tmp_right_xsum, tmp_right_ysum,
                         )
                 if n_random_direction > 0:
                     rand_dirs = self.random_state.randn(n, d)
                     rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, np.newaxis]
-                    for rand_dir_idx in range(n_random_direction):
+                    for rand_dir_idx in np.arange(n_random_direction, dtype=int):
                         rand_dir = rand_dirs[rand_dir_idx, :]
                         node_cand_data = self.eval_split(
                             xnode.dot(rand_dir),
                             lambda cut_value: VectorSplit(rand_dir, cut_value),
                             sample_idx, min_samples_leaf, knots,
                             x, y, alpha, node_idx, node_ssq, node_cand_data,
+                            tmp_d, tmp_dd, tmp_dk, tmp_xx, tmp_xy, tmp_xsum, tmp_ysum,
+                            tmp_left_xx, tmp_left_xy, tmp_left_xsum, tmp_left_ysum,
+                            tmp_right_xx, tmp_right_xy, tmp_right_xsum, tmp_right_ysum,
                         )
                 if node_cand_data.idx is not None:
                     heapq.heappush(candidates, node_cand_data)
@@ -353,7 +418,7 @@ class RidgeRegTree(Regressor):
         tree = self.tree_
         yhat = np.empty((x.shape[0], max(1, self.n_outputs_)))
         yhat[:] = np.nan
-        evals = [(0, np.arange(x.shape[0]))]
+        evals = [(0, np.arange(x.shape[0], dtype=int))]
         while len(evals) > 0:
             node_idx, sample_idx = evals.pop()
             node = tree[node_idx]
